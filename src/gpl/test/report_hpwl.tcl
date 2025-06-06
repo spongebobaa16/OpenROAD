@@ -1,4 +1,4 @@
-source "helpers.tcl"
+source ../../OpenROAD/test/helpers.tcl
 set db [::ord::get_db]
 set block [[$db getChip] getBlock]
 

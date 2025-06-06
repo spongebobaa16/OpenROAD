@@ -639,7 +639,7 @@ LibertyCell* BaseMove::upsizeCell(LibertyPort* in_port,
     const float delay
         = resizer_->gateDelay(drvr_port, load_cap, resizer_->tgt_slew_dcalc_ap_)
           + prev_drive * in_port->cornerPort(lib_ap)->capacitance();
-
+    int i = 0;
     for (LibertyCell* swappable : swappable_cells) {
       LibertyCell* swappable_corner = swappable->cornerCell(lib_ap);
       LibertyPort* swappable_drvr
@@ -651,9 +651,14 @@ LibertyCell* BaseMove::upsizeCell(LibertyPort* in_port,
       const float swappable_delay
           = resizer_->gateDelay(swappable_drvr, load_cap, dcalc_ap)
             + prev_drive * swappable_input->capacitance();
-      if (swappable_drive < drive && swappable_delay < delay) {
-        return swappable;
-      }
+      // if (swappable_drive < drive && swappable_delay < delay) {
+      //   return swappable;
+      // }
+      debugPrint(logger_, RSZ, "upsizeCell", 1, 
+                 " sorted[{}]: {} (drive: {}, delay: {}, cap: {})",
+                 i, swappable->name(), swappable_drive, 
+                 swappable_delay, swappable_input->capacitance());
+      i++;
     }
   }
   return nullptr;

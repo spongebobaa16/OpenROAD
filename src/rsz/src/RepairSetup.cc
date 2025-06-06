@@ -206,6 +206,10 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
   int max_end_count = violating_ends.size() * repair_tns_end_percent;
   float initial_tns = sta_->totalNegativeSlack(max_);
   float prev_tns = initial_tns;
+
+  float curr_tns = initial_tns;
+
+
   int num_viols = violating_ends.size();
   // Always repair the worst endpoint, even if tns percent is zero.
   max_end_count = max(max_end_count, 1);
@@ -239,7 +243,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     sta_->worstSlack(max_, worst_slack, worst_vertex);
     debugPrint(logger_,
                RSZ,
-               "repair_setup",
+               "watchfor",
                1,
                "{} slack = {} worst_slack = {}",
                end->name(network_),
@@ -248,7 +252,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     end_index++;
     debugPrint(logger_,
                RSZ,
-               "repair_setup",
+               "watchfor",
                1,
                "Doing {} /{}",
                end_index,
@@ -323,6 +327,17 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
       Path* end_path = sta_->vertexWorstSlackPath(end, max_);
 
       const bool changed = repairPath(end_path, end_slack, setup_slack_margin);
+      /*
+      RepairSetup.cc -> bool RepairSetup::repairPath
+        SizeUpMove.cc -> bool SizeUpMove::doMove
+          BaseMove.cc -> LibertyCell* BaseMove::upsizeCell
+            sort swappable_cells
+          Resizer.cc  -> bool Resizer::replaceCell
+
+        
+      */
+
+
       if (!changed) {
         if (pass != 1) {
           debugPrint(logger_,
@@ -353,10 +368,13 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
       sta_->findRequireds();
       end_slack = sta_->vertexSlack(end, max_);
       sta_->worstSlack(max_, worst_slack, worst_vertex);
-      const bool better
-          = (fuzzyGreater(worst_slack, prev_worst_slack)
-             || (end_index != 1 && fuzzyEqual(worst_slack, prev_worst_slack)
-                 && fuzzyGreater(end_slack, prev_end_slack)));
+      curr_tns = sta_->totalNegativeSlack(max_);
+      const bool better = (fuzzyGreater(curr_tns, prev_tns));
+      
+      // const bool better
+      //     = (fuzzyGreater(worst_slack, prev_worst_slack)
+      //        || (end_index != 1 && fuzzyEqual(worst_slack, prev_worst_slack)
+      //            && fuzzyGreater(end_slack, prev_end_slack)));
       debugPrint(logger_,
                  RSZ,
                  "repair_setup",
@@ -370,6 +388,16 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
         if (end_slack > setup_slack_margin) {
           --num_viols;
         }
+        debugPrint(logger_, RSZ, "upsizeMove", 1, "Outside Better: sizing move accepted for "
+                   "endpoint {} pass {} because WNS improved from {} to {} and "
+                   "TNS improved from {} to {}",
+                   end_index, pass, 
+                   delayAsString(prev_worst_slack, sta_, digits),
+                   delayAsString(worst_slack, sta_, digits),
+                   delayAsString(prev_tns, sta_, digits),
+                   delayAsString(curr_tns, sta_, digits));
+        // std::cout << "BBBEEETTER" << " " << end_index << " " << pass << " " << prev_worst_slack << " " << worst_slack << " " << prev_tns << " " << curr_tns << " " << std::endl;
+        prev_tns = curr_tns;
         prev_end_slack = end_slack;
         prev_worst_slack = worst_slack;
         decreasing_slack_passes = 0;
@@ -799,6 +827,7 @@ bool RepairSetup::terminateProgress(const int iteration,
 void RepairSetup::repairSetupLastGasp(const OptoParams& params, int& num_viols)
 {
   // Sort remaining failing endpoints
+  debugPrint(logger_, RSZ, "repair_setup", 1, "lastGaspStart");
   const VertexSet* endpoints = sta_->endpoints();
   vector<pair<Vertex*, Slack>> violating_ends;
   for (Vertex* end : *endpoints) {
@@ -919,7 +948,7 @@ void RepairSetup::repairSetupLastGasp(const OptoParams& params, int& num_viols)
       if (fuzzyGreaterEqual(curr_worst_slack, prev_worst_slack)
           && fuzzyGreaterEqual(curr_tns, prev_tns)) {
         // clang-format off
-        debugPrint(logger_, RSZ, "repair_setup", 1, "sizing move accepted for "
+        debugPrint(logger_, RSZ, "repair_setup", 1, "lastGasp: sizing move accepted for "
                    "endpoint {} pass {} because WNS improved to {:0.3f} and "
                    "TNS improved to {:0.3f}",
                    end_index, pass, curr_worst_slack, curr_tns);
@@ -957,6 +986,8 @@ void RepairSetup::repairSetupLastGasp(const OptoParams& params, int& num_viols)
       break;
     }
   }  // for each violating endpoint
+  debugPrint(logger_, RSZ, "repair_setup", 1, "lastGaspEnd");
+
 }
 
 }  // namespace rsz
