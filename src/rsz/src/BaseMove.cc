@@ -620,25 +620,16 @@ LibertyCell* BaseMove::upsizeCell(LibertyPort* in_port,
   if (!swappable_cells.empty()) {
     const char* in_port_name = in_port->name();
     const char* drvr_port_name = drvr_port->name();
-    sort(swappable_cells,
-         [=](const LibertyCell* cell1, const LibertyCell* cell2) {
-           LibertyPort* port1
-               = cell1->findLibertyPort(drvr_port_name)->cornerPort(lib_ap);
-           LibertyPort* port2
-               = cell2->findLibertyPort(drvr_port_name)->cornerPort(lib_ap);
-           const float drive1 = port1->driveResistance();
-           const float drive2 = port2->driveResistance();
-           const ArcDelay intrinsic1 = port1->intrinsicDelay(this);
-           const ArcDelay intrinsic2 = port2->intrinsicDelay(this);
-           const float capacitance1 = port1->capacitance();
-           const float capacitance2 = port2->capacitance();
-           return std::tie(drive2, intrinsic1, capacitance1)
-                  < std::tie(drive1, intrinsic2, capacitance2);
-         });
-    const float drive = drvr_port->cornerPort(lib_ap)->driveResistance();
-    const float delay
+    
+    // Calculate original delay
+    const float original_delay
         = resizer_->gateDelay(drvr_port, load_cap, resizer_->tgt_slew_dcalc_ap_)
           + prev_drive * in_port->cornerPort(lib_ap)->capacitance();
+
+    // Find the cell with minimum delay
+    LibertyCell* best_cell = nullptr;
+    float min_delay = original_delay;
+    int i = 0;
 
     for (LibertyCell* swappable : swappable_cells) {
       LibertyCell* swappable_corner = swappable->cornerCell(lib_ap);
@@ -646,18 +637,40 @@ LibertyCell* BaseMove::upsizeCell(LibertyPort* in_port,
           = swappable_corner->findLibertyPort(drvr_port_name);
       LibertyPort* swappable_input
           = swappable_corner->findLibertyPort(in_port_name);
-      const float swappable_drive = swappable_drvr->driveResistance();
-      // Include delay of previous driver into swappable gate.
-      const float swappable_delay
-          = resizer_->gateDelay(swappable_drvr, load_cap, dcalc_ap)
-            + prev_drive * swappable_input->capacitance();
-      if (swappable_drive < drive && swappable_delay < delay) {
-        return swappable;
+      
+      if (swappable_drvr && swappable_input) {
+        // Calculate delay for this candidate
+        const float swappable_delay
+            = resizer_->gateDelay(swappable_drvr, load_cap, dcalc_ap)
+              + prev_drive * swappable_input->capacitance();
+        
+        debugPrint(logger_, RSZ, "upsizeCell", 1, 
+                   "Candidate[{}]: {} (delay: {:.3f})",
+                   i, swappable->name(), swappable_delay);
+        
+        // Update best candidate if this one has smaller delay
+        if (swappable_delay < min_delay) {
+          min_delay = swappable_delay;
+          best_cell = swappable;
+        }
+        i++;
       }
     }
+
+    // Return the best cell if it's better than original
+    if (best_cell) {
+      debugPrint(logger_, RSZ, "upsizeCell", 1, 
+                 "Selected: {} (delay: {:.3f} < {:.3f})",
+                 best_cell->name(), min_delay, original_delay);
+      return best_cell;
+    }
+    
+    debugPrint(logger_, RSZ, "upsizeCell", 1, 
+               "No cell with better delay found (original: {:.3f})",
+               original_delay);
   }
   return nullptr;
-};
+}
 
 // Replace LEF with LEF so ports stay aligned in instance.
 bool BaseMove::replaceCell(Instance* inst, const LibertyCell* replacement)
