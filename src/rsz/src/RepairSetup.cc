@@ -471,13 +471,13 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     if (verbose || opto_iteration == 1) {
       printProgress(opto_iteration, true, false, false, num_viols);
     }
-    if (two_cons_terminations) {
-      // clang-format off
-      debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out of setup fixing"
-                 "due to no TNS progress for two opto cycles");
-      // clang-format on
-      break;
-    }
+    // if (two_cons_terminations) {
+    //   // clang-format off
+    //   debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out of setup fixing"
+    //              "due to no TNS progress for two opto cycles");
+    //   // clang-format on
+    //   break;
+    // }
   }  // for each violating endpoint
 
   if (!skip_last_gasp) {
@@ -828,16 +828,16 @@ bool RepairSetup::terminateProgress(const int iteration,
     float curr_tns = sta_->totalNegativeSlack(max_);
     float inc_fix_rate = (prev_tns - curr_tns) / initial_tns;
     prev_tns = curr_tns;
-    if (iteration > 1000  // allow for some initial fixing for 1000 iterations
-        && inc_fix_rate < fix_rate_threshold) {
-      // clang-format off
-      debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out at iter {}"
-                 " because incr fix rate {:0.2f}% is < {:0.2f}% [endpt {}/{}]",
-                 iteration, inc_fix_rate*100, fix_rate_threshold*100,
-                 endpt_index, num_endpts);
-      // clang-format on
-      return true;
-    }
+    // if (iteration > 1000  // allow for some initial fixing for 1000 iterations
+    //     && inc_fix_rate < fix_rate_threshold) {
+    //   // clang-format off
+    //   debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out at iter {}"
+    //              " because incr fix rate {:0.2f}% is < {:0.2f}% [endpt {}/{}]",
+    //              iteration, inc_fix_rate*100, fix_rate_threshold*100,
+    //              endpt_index, num_endpts);
+    //   // clang-format on
+    //   return true;
+    // }
   }
   return false;
 }
@@ -998,13 +998,13 @@ void RepairSetup::repairSetupLastGasp(const OptoParams& params, int& num_viols)
     if (params.verbose || opto_iteration == 1) {
       printProgress(opto_iteration, true, false, true, num_viols);
     }
-    if (two_cons_terminations) {
-      // clang-format off
-      debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out of last gasp fixing"
-                 "due to no TNS progress for two opto cycles");
-      // clang-format on
-      break;
-    }
+    // if (two_cons_terminations) {
+    //   // clang-format off
+    //   debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out of last gasp fixing"
+    //              "due to no TNS progress for two opto cycles");
+    //   // clang-format on
+    //   break;
+    // }
   }  // for each violating endpoint
 }
 
