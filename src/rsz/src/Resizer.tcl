@@ -509,6 +509,14 @@ proc repair_tie_fanout { args } {
   }
 }
 
+sta::define_cmd_args "report_hpwl" {}
+
+proc report_hpwl { args } {
+  sta::parse_key_args "report_hpwl" args keys {} flags {}
+  sta::check_argc_eq0 "report_hpwl" $args
+  rsz::report_hpwl_cmd
+}
+
 
 # -max_passes is for developer debugging so intentionally not documented
 # in define_cmd_args

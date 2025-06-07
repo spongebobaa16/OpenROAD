@@ -476,6 +476,14 @@ repair_design_cmd(double max_length,
                         verbose);
 }
 
+void
+report_hpwl_cmd()
+{
+  ensureLinked();
+  Resizer *resizer = getResizer();
+  resizer->reportHpwl();
+}
+
 int
 repair_design_buffer_count()
 {

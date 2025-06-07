@@ -350,6 +350,7 @@ class Resizer : public dbStaState, public dbNetworkObserver
       bool match_cell_footprint,
       bool verbose);
   int repairDesignBufferCount() const;
+  void reportHpwl();
   // for debugging
   void repairNet(Net* net,
                  double max_wire_length,  // meters

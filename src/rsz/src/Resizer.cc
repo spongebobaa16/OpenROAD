@@ -53,6 +53,7 @@
 #include "sta/Units.hh"
 #include "utl/Logger.h"
 #include "utl/scope.h"
+#include "odb/util.h"
 
 // http://vlsicad.eecs.umich.edu/BK/Slots/cache/dropzone.tamu.edu/~zhuoli/GSRC/fast_buffer_insertion.html
 
@@ -3521,6 +3522,18 @@ bool Resizer::isFuncOneZero(const Pin* drvr_pin)
                || func->op() == FuncExpr::op_one);
   }
   return false;
+}
+
+void Resizer::reportHpwl()
+{
+  odb::WireLengthEvaluator eval(block_);
+  int64_t hpwl_x = 0;
+  int64_t hpwl_y = 0;
+  const int64_t hpwl = eval.hpwl(hpwl_x, hpwl_y);
+  logger_->report("HPWL: {} ({}, {})",
+                  hpwl,
+                  hpwl_x,
+                  hpwl_y);
 }
 
 ////////////////////////////////////////////////////////////////
