@@ -91,6 +91,7 @@ class RepairSetup : public sta::dbStaState
  private:
   void init();
   bool repairPath(Path* path, Slack path_slack, float setup_slack_margin);
+  bool repairCriticalPath(Path* path, Slack path_slack, float setup_slack_margin);
   int fanout(Vertex* vertex);
   bool hasTopLevelOutputPort(Net* net);
 

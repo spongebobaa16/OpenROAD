@@ -230,6 +230,302 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     min_viol_ = -violating_ends.back().second;
     max_viol_ = -violating_ends.front().second;
   }
+
+  // Ferayer Start
+  // Map each vertex to a tuple of (worst slack, original slack)
+  std::map<Path*, int> critical_path_slacks;
+
+  // for each violating endpoint, (after sort by slack)
+  for (const auto& end_original_slack : violating_ends) {
+    Vertex* end = end_original_slack.first;
+    //std::vector<Path*> worst_paths = sta_->vertexWorstPaths(end, max_);
+    // for (Path* path : worst_paths) {
+    //   if (critical_path_slacks.find(path) != critical_path_slacks.end()) {
+    //     critical_path_slacks[path]++;
+    //   } else {
+    //     critical_path_slacks[path] = 1;
+    //   }
+    // }
+    Path* end_path = sta_->vertexWorstSlackPath(end, max_);
+    if (critical_path_slacks.find(end_path) != critical_path_slacks.end()) {
+        critical_path_slacks[end_path]++;
+      } else {
+        critical_path_slacks[end_path] = 1;
+      }
+
+  }
+  debugPrint(logger_,
+                   RSZ,
+                   "repair_setup",
+                   1,
+                   "start critical vertex refinement");
+
+
+  
+  printProgress(opto_iteration, true, false, false, num_viols);
+
+
+  // Sort vertices by number of critical paths passing through them
+  vector<pair<Path*, int>> sorted_critical_paths(critical_path_slacks.begin(), critical_path_slacks.end());
+  sort(sorted_critical_paths.begin(), sorted_critical_paths.end(),
+       [](const pair<Path*, int>& a, const pair<Path*, int>& b) {
+         return a.second > b.second;
+       });
+
+
+  for (const auto& end_original_slack : sorted_critical_paths) {
+    fallback_ = false;
+    Path* end_path = end_original_slack.first;
+    Vertex* end_vertex = end_path->vertex(sta_);
+    Slack end_slack = sta_->vertexSlack(end_vertex, max_);
+    Slack worst_slack;
+    Vertex* worst_vertex;
+    sta_->worstSlack(max_, worst_slack, worst_vertex);
+
+    debugPrint(logger_,
+               RSZ,
+               "repair_setup",
+               1,
+               "{} slack = {} worst_slack = {}",
+               end_vertex->name(network_),
+               delayAsString(end_slack, sta_, digits),
+               delayAsString(worst_slack, sta_, digits));
+    end_index++;
+    debugPrint(logger_,
+               RSZ,
+               "repair_setup",
+               1,
+               "Doing {} /{}",
+               end_index,
+               max_end_count);
+    if (end_index > max_end_count) {
+      // clang-format off
+      debugPrint(logger_, RSZ, "repair_setup", 1, "{} end_index {} is larger than"
+                 " max_end_count {}", end_vertex->name(network_), end_index,
+                 max_end_count);
+      // clang-format on
+      break;
+    }
+    Slack prev_end_slack = end_slack;
+    Slack prev_worst_slack = worst_slack;
+    int pass = 1;
+    int decreasing_slack_passes = 0;
+    resizer_->journalBegin();
+    while (pass <= max_passes) {
+      opto_iteration++;
+      if (verbose || opto_iteration == 1) {
+        printProgress(opto_iteration, false, false, false, num_viols);
+      }
+      if (terminateProgress(opto_iteration,
+                            initial_tns,
+                            prev_tns,
+                            fix_rate_threshold,
+                            end_index,
+                            max_end_count)) {
+        if (prev_termination) {
+          // Abort entire fixing if no progress for 200 iterations
+          two_cons_terminations = true;
+        } else {
+          prev_termination = true;
+        }
+
+        // Restore to previous good checkpoint
+        debugPrint(logger_,
+                   RSZ,
+                   "repair_setup",
+                   2,
+                   "Restoring best slack end slack {} worst slack {}",
+                   delayAsString(prev_end_slack, sta_, digits),
+                   delayAsString(prev_worst_slack, sta_, digits));
+        resizer_->journalRestore();
+        break;
+      }
+      if (opto_iteration % opto_small_interval_ == 0) {
+        prev_termination = false;
+      }
+
+      if (end_slack > setup_slack_margin) {
+        --num_viols;
+        if (pass != 1) {
+          debugPrint(logger_,
+                     RSZ,
+                     "repair_setup",
+                     2,
+                     "Restoring best slack end slack {} worst slack {}",
+                     delayAsString(prev_end_slack, sta_, digits),
+                     delayAsString(prev_worst_slack, sta_, digits));
+          resizer_->journalRestore();
+        } else {
+          resizer_->journalEnd();
+        }
+        // clang-format off
+        debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out at {}/{} "
+                   "end_slack {} is larger than setup_slack_margin {}",
+                   end_index, max_end_count, end_slack, setup_slack_margin);
+        // clang-format on
+        break;
+      }
+      // Path* end_path = sta_->vertexWorstSlackPath(end_vertex, max_);
+
+      const bool changed = repairPath(end_path, end_slack, setup_slack_margin);
+      if (!changed) {
+        if (pass != 1) {
+          debugPrint(logger_,
+                     RSZ,
+                     "repair_setup",
+                     2,
+                     "No change after {} decreasing slack passes.",
+                     decreasing_slack_passes);
+          debugPrint(logger_,
+                     RSZ,
+                     "repair_setup",
+                     2,
+                     "Restoring best slack end slack {} worst slack {}",
+                     delayAsString(prev_end_slack, sta_, digits),
+                     delayAsString(prev_worst_slack, sta_, digits));
+          resizer_->journalRestore();
+        } else {
+          resizer_->journalEnd();
+        }
+        // clang-format off
+        debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out {} no changes"
+                   " after {} decreasing passes", end_vertex->name(network_),
+                   decreasing_slack_passes);
+        // clang-format on
+        break;
+      }
+      resizer_->updateParasitics();
+      sta_->findRequireds();
+      end_slack = sta_->vertexSlack(end_vertex, max_);
+      sta_->worstSlack(max_, worst_slack, worst_vertex);
+      const bool better
+          = (fuzzyGreater(worst_slack, prev_worst_slack)
+             || (end_index != 1 && fuzzyEqual(worst_slack, prev_worst_slack)
+                 && fuzzyGreater(end_slack, prev_end_slack)));
+      debugPrint(logger_,
+                 RSZ,
+                 "repair_setup",
+                 2,
+                 "pass {} slack = {} worst_slack = {} {}",
+                 pass,
+                 delayAsString(end_slack, sta_, digits),
+                 delayAsString(worst_slack, sta_, digits),
+                 better ? "save" : "");
+      if (better) {
+        if (end_slack > setup_slack_margin) {
+          --num_viols;
+        }
+        prev_end_slack = end_slack;
+        prev_worst_slack = worst_slack;
+        decreasing_slack_passes = 0;
+        resizer_->journalEnd();
+        // Progress, Save checkpoint so we can back up to here.
+        resizer_->journalBegin();
+      } else {
+        fallback_ = true;
+        // Allow slack to increase to get out of local minima.
+        // Do not update prev_end_slack so it saves the high water mark.
+        decreasing_slack_passes++;
+        if (decreasing_slack_passes > decreasing_slack_max_passes_) {
+          // Undo changes that reduced slack.
+          debugPrint(logger_,
+                     RSZ,
+                     "repair_setup",
+                     2,
+                     "decreasing slack for {} passes.",
+                     decreasing_slack_passes);
+          debugPrint(logger_,
+                     RSZ,
+                     "repair_setup",
+                     2,
+                     "Restoring best end slack {} worst slack {}",
+                     delayAsString(prev_end_slack, sta_, digits),
+                     delayAsString(prev_worst_slack, sta_, digits));
+          resizer_->journalRestore();
+          // clang-format off
+          debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out {} decreasing"
+                     " passes {} > decreasig pass limit {}", end_vertex->name(network_),
+                     decreasing_slack_passes, decreasing_slack_max_passes_);
+          // clang-format on
+          break;
+        }
+      }
+
+      if (resizer_->overMaxArea()) {
+        // clang-format off
+        debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out {} resizer"
+                   " over max area", end_vertex->name(network_));
+        // clang-format on
+        resizer_->journalEnd();
+        break;
+      }
+      if (end_index == 1) {
+        end_vertex = worst_vertex;
+      }
+      pass++;
+    }  // while pass <= max_passes
+    if (verbose || opto_iteration == 1) {
+      printProgress(opto_iteration, true, false, false, num_viols);
+    }
+    if (two_cons_terminations) {
+      // clang-format off
+      debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out of setup fixing"
+                 "due to no TNS progress for two opto cycles");
+      // clang-format on
+      break;
+    }
+  }  // for each violating endpoint
+
+
+  debugPrint(logger_,
+                   RSZ,
+                   "repair_setup",
+                   1,
+                   "end critical vertex refinement");
+
+  printProgress(opto_iteration, true, false, false, num_viols);
+  
+  // Recalculate violating endpoints after critical path refinement
+  violating_ends.clear();
+  for (Vertex* end : *endpoints) {
+    const Slack end_slack = sta_->vertexSlack(end, max_);
+    if (end_slack < setup_slack_margin) {
+      violating_ends.emplace_back(end, end_slack);
+    }
+  }
+  std::stable_sort(violating_ends.begin(),
+                   violating_ends.end(),
+                   [](const auto& end_slack1, const auto& end_slack2) {
+                     return end_slack1.second < end_slack2.second;
+                   });
+  end_index = 0;
+  max_end_count = violating_ends.size() * repair_tns_end_percent;
+  initial_tns = sta_->totalNegativeSlack(max_);
+  prev_tns = initial_tns;
+  num_viols = violating_ends.size();
+  // Always repair the worst endpoint, even if tns percent is zero.
+  max_end_count = max(max_end_count, 1);
+
+  // Ensure that max cap and max fanout violations don't get worse
+  sta_->checkCapacitanceLimitPreamble();
+  sta_->checkFanoutLimitPreamble();
+
+  prev_termination = false;
+  two_cons_terminations = false;
+  printProgress(opto_iteration, false, false, false, num_viols);
+  fix_rate_threshold = inc_fix_rate_threshold_;
+  if (!violating_ends.empty()) {
+    min_viol_ = -violating_ends.back().second;
+    max_viol_ = -violating_ends.front().second;
+  }
+  
+  debugPrint(logger_,
+                   RSZ,
+                   "repair_setup",
+                   1,
+                   "end recalculate violating endpoints");
+
+
   for (const auto& end_original_slack : violating_ends) {
     fallback_ = false;
     Vertex* end = end_original_slack.first;
@@ -237,6 +533,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     Slack worst_slack;
     Vertex* worst_vertex;
     sta_->worstSlack(max_, worst_slack, worst_vertex);
+
     debugPrint(logger_,
                RSZ,
                "repair_setup",
@@ -578,6 +875,89 @@ int RepairSetup::fanout(Vertex* vertex)
    figure out how to deal with min implant rules to make it production
    ready)
  */
+
+//Ferayer
+bool RepairSetup::repairCriticalPath(
+  Path* path, 
+  Slack path_slack, 
+  float setup_slack_margin
+  )
+{
+  PathExpanded expanded(path, sta_);
+  bool changed = 0;
+  int path_index = 0;
+  if(expanded.size() > 1) {
+
+    const int path_length = expanded.size();
+    vector<pair<int, Delay>> load_delays;
+    const int start_index = expanded.startIndex();
+    const DcalcAnalysisPt* dcalc_ap = path->dcalcAnalysisPt(sta_);
+    const int lib_ap = dcalc_ap->libertyIndex();
+    // Find load delay for each gate in the path.
+    for (int i = start_index; i < path_length; i++) {
+      const Path* curr_path = expanded.path(i);
+      Vertex* path_vertex = curr_path->vertex(sta_);
+      const Pin* path_pin = curr_path->pin(sta_);
+      if (i > 0 && network_->isDriver(path_pin)
+          && !network_->isTopLevelPort(path_pin)) {
+        const TimingArc* prev_arc = curr_path->prevArc(sta_);
+        const TimingArc* corner_arc = prev_arc->cornerArc(lib_ap);
+        Edge* prev_edge = curr_path->prevEdge(sta_);
+        const Delay load_delay
+            = graph_->arcDelay(prev_edge, prev_arc, dcalc_ap->index())
+              // Remove intrinsic delay to find load dependent delay.
+              - corner_arc->intrinsicDelay();
+        load_delays.emplace_back(i, load_delay);
+        debugPrint(logger_,
+                   RSZ,
+                   "repair_setup",
+                   1,
+                   "{} load_delay = {} intrinsic_delay = {} index = {}",
+                   path_vertex->name(network_),
+                   delayAsString(load_delay, sta_, 3),
+                   delayAsString(corner_arc->intrinsicDelay(), sta_, 3),
+                   i);
+      }
+    }
+    sort(
+        load_delays.begin(),
+        load_delays.end(),
+        [](pair<int, Delay> pair1, pair<int, Delay> pair2) {
+          return pair1.second > pair2.second
+                 || (pair1.second == pair2.second && pair1.first > pair2.first);
+        });
+
+
+
+
+    for(int i = start_index; i < path_length; i++) {
+      const Path* curr_path = expanded.path(i);
+      if(curr_path->vertex(sta_) == path->vertex(sta_)) {
+        path_index = i;
+        break;
+      }
+    }
+    debugPrint(logger_,
+               RSZ,
+               "repair_setup",
+               1,
+               "path_index = {}",
+               path_index);
+    if(resizer_->size_up_move->doMove(
+      path, 
+      path_index, 
+      path_slack, 
+      &expanded, 
+      setup_slack_margin)) {
+      changed = true;
+    }
+  }
+  return changed;
+
+}
+
+
+
 bool RepairSetup::repairPath(Path* path,
                              const Slack path_slack,
                              const float setup_slack_margin)
