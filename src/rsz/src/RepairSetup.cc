@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -370,6 +371,13 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
         if (end_slack > setup_slack_margin) {
           --num_viols;
         }
+        debugPrint(logger_,
+                   RSZ,
+                   "my_test",
+                   1,
+                   "Better! end slack: {} -> {}",
+                   delayAsString(prev_end_slack, sta_, digits),
+                   delayAsString(end_slack, sta_, digits));
         prev_end_slack = end_slack;
         prev_worst_slack = worst_slack;
         decreasing_slack_passes = 0;
@@ -378,31 +386,72 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
         resizer_->journalBegin();
       } else {
         fallback_ = true;
-        // Allow slack to increase to get out of local minima.
-        // Do not update prev_end_slack so it saves the high water mark.
+        // Simulated Annealing: Allow slack to increase with probability
+        // based on temperature and cost difference
         decreasing_slack_passes++;
-        if (decreasing_slack_passes > decreasing_slack_max_passes_) {
-          // Undo changes that reduced slack.
+        
+        // Calculate cost difference consistent with 'better' logic
+        // Primary: worst_slack improvement, Secondary: end_slack improvement
+        float worst_slack_delta = prev_worst_slack - worst_slack;  // positive = worse worst_slack
+        float end_slack_delta = prev_end_slack - end_slack;        // positive = worse end_slack
+        
+        // Combined cost: prioritize worst_slack, then end_slack
+        float delta_cost;
+        if (abs(worst_slack_delta) > 1e-15) {  // significant worst_slack change
+          delta_cost = worst_slack_delta;
+        } else {  // worst_slack ~equal, use end_slack 
+          delta_cost = end_slack_delta;
+        }
+        
+        // Temperature schedule: start high, decrease over iterations
+        float initial_temp = 1.0f;
+        float cooling_rate = 0.95f;
+        float min_temp = 0.01f;  // Minimum temperature threshold
+        float temp_calc = initial_temp * pow(cooling_rate, decreasing_slack_passes);
+        float current_temp = (temp_calc > min_temp) ? temp_calc : min_temp;
+        
+        // SA acceptance probability (scaled for slack magnitude ~1e-12)
+        float scaling_factor = 1e11;  // Adjust this factor based on typical slack values
+        float acceptance_prob = exp(-delta_cost * scaling_factor / current_temp);
+        
+        // Generate random number for acceptance decision
+        float random_val = static_cast<float>(rand()) / RAND_MAX;
+        bool accept_worse = (random_val < acceptance_prob);
+        
+        debugPrint(logger_,
+                   RSZ,
+                   "my_test",
+                   1,
+                   "SA: worst_Δ={}, end_Δ={}, final_cost={}, temp={:.3f}, prob={:.6f}, rand={:.3f}, accept={}",
+                   delayAsString(worst_slack_delta, sta_, digits),
+                   delayAsString(end_slack_delta, sta_, digits),
+                   delayAsString(delta_cost, sta_, digits), 
+                   current_temp, 
+                   acceptance_prob, 
+                   random_val, 
+                   accept_worse ? "YES" : "NO");
+        
+        if (accept_worse) {
+          // Accept the worse solution with SA probability
           debugPrint(logger_,
                      RSZ,
-                     "repair_setup",
-                     2,
-                     "decreasing slack for {} passes.",
+                     "my_test",
+                     1,
+                     "SA ACCEPT: worse solution accepted (pass {}), continuing from this state",
                      decreasing_slack_passes);
+          // Note: Don't update checkpoint! This is just a temporary acceptance
+          // We continue from this worse state but keep the best solution as our checkpoint
+        } else {
+          // Reject the worse solution - restore to last checkpoint immediately
           debugPrint(logger_,
                      RSZ,
-                     "repair_setup",
-                     2,
-                     "Restoring best end slack {} worst slack {}",
-                     delayAsString(prev_end_slack, sta_, digits),
-                     delayAsString(prev_worst_slack, sta_, digits));
+                     "my_test",
+                     1,
+                     "SA REJECT: worse solution rejected (pass {}), restoring to last checkpoint",
+                     decreasing_slack_passes);
           resizer_->journalRestore();
-          // clang-format off
-          debugPrint(logger_, RSZ, "repair_setup", 1, "bailing out {} decreasing"
-                     " passes {} > decreasig pass limit {}", end->name(network_),
-                     decreasing_slack_passes, decreasing_slack_max_passes_);
-          // clang-format on
           break;
+          // Note: After restore, we're back at the last good checkpoint and should continue from there
         }
       }
 
