@@ -456,8 +456,10 @@ void RepairHold::repairEndHold(Vertex* end_vertex,
               Vertex* path_load = path_vertices[i + 1];
               Point path_load_loc = db_network_->location(path_load->pin());
               Point drvr_loc = db_network_->location(path_vertex->pin());
-              Point buffer_loc((drvr_loc.x() + path_load_loc.x()) / 2,
-                               (drvr_loc.y() + path_load_loc.y()) / 2);
+              // Point buffer_loc((drvr_loc.x() + path_load_loc.x()) / 2,
+              //                  (drvr_loc.y() + path_load_loc.y()) / 2);
+              Point buffer_loc(drvr_loc.x()+4*(path_load_loc.x()-drvr_loc.x())/5,
+                                  drvr_loc.y()+4*(path_load_loc.y()-drvr_loc.y())/5);
               // Despite checking for setup slack to insert the bufffer,
               // increased slews downstream can increase delays and
               // reduce setup slack in ways that are too expensive to

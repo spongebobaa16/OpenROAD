@@ -83,6 +83,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
                               const bool skip_buffer_removal,
                               const bool skip_last_gasp)
 {
+  bool openSecond = false;
   bool repaired = false;
   init();
   constexpr int digits = 3;
@@ -231,6 +232,11 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     min_viol_ = -violating_ends.back().second;
     max_viol_ = -violating_ends.front().second;
   }
+
+  if (sta_->totalNegativeSlack(max_) > -0.000000006510) {
+    openSecond = true;
+  }
+
   for (const auto& end_original_slack : violating_ends) {
     fallback_ = false;
     Vertex* end = end_original_slack.first;
@@ -264,6 +270,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     }
     Slack prev_end_slack = end_slack;
     Slack prev_worst_slack = worst_slack;
+    float prev_tns = sta_->totalNegativeSlack(max_);
     int pass = 1;
     int decreasing_slack_passes = 0;
     resizer_->journalBegin();
@@ -354,18 +361,19 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
       sta_->findRequireds();
       end_slack = sta_->vertexSlack(end, max_);
       sta_->worstSlack(max_, worst_slack, worst_vertex);
-      const bool better
-          = (fuzzyGreater(worst_slack, prev_worst_slack)
+      float current_tns = sta_->totalNegativeSlack(max_);
+      const bool better = (!openSecond) ? (fuzzyGreater(worst_slack, prev_worst_slack)
              || (end_index != 1 && fuzzyEqual(worst_slack, prev_worst_slack)
-                 && fuzzyGreater(end_slack, prev_end_slack)));
+                 && fuzzyGreater(end_slack, prev_end_slack))) : (current_tns > prev_tns);
       debugPrint(logger_,
                  RSZ,
                  "repair_setup",
                  2,
-                 "pass {} slack = {} worst_slack = {} {}",
+                 "pass {} slack = {} worst_slack = {} TNS = {} {}",
                  pass,
                  delayAsString(end_slack, sta_, digits),
                  delayAsString(worst_slack, sta_, digits),
+                 delayAsString(current_tns, sta_, digits),
                  better ? "save" : "");
       if (better) {
         if (end_slack > setup_slack_margin) {
@@ -375,11 +383,14 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
                    RSZ,
                    "my_test",
                    1,
-                   "Better! end slack: {} -> {}",
+                   "Better! TNS: {} -> {} (end slack: {} -> {})",
+                   delayAsString(prev_tns, sta_, digits),
+                   delayAsString(current_tns, sta_, digits),
                    delayAsString(prev_end_slack, sta_, digits),
                    delayAsString(end_slack, sta_, digits));
         prev_end_slack = end_slack;
         prev_worst_slack = worst_slack;
+        prev_tns = current_tns;
         
         resizer_->journalEnd();
         // Progress, Save checkpoint so we can back up to here.
@@ -397,17 +408,22 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
         
         // Combined cost: prioritize worst_slack, then end_slack
         float delta_cost;
+        float tns_delta;
         if (abs(worst_slack_delta) > 1e-15) {  // significant worst_slack change
           delta_cost = worst_slack_delta;
         } else {  // worst_slack ~equal, use end_slack 
           delta_cost = end_slack_delta;
         }
+        if (openSecond) {
+          tns_delta = prev_tns - current_tns;
+          delta_cost = tns_delta;
+        }
         
         // Temperature schedule: start high, decrease over iterations
-        float initial_temp = 1.0f;
+        float initial_temp = 10.0f;
         float cooling_rate = 0.95f;
         float min_temp = 0.01f;  // Minimum temperature threshold
-        float temp_calc = initial_temp * pow(cooling_rate, decreasing_slack_passes);
+        float temp_calc = initial_temp * pow(cooling_rate, floor(decreasing_slack_passes/3)*3);
         float current_temp = (temp_calc > min_temp) ? temp_calc : min_temp;
         
         // SA acceptance probability (scaled for slack magnitude ~1e-12)
@@ -422,9 +438,8 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
                    RSZ,
                    "my_test",
                    1,
-                   "SA: worst_Δ={}, end_Δ={}, final_cost={}, temp={:.3f}, prob={:.6f}, rand={:.3f}, accept={}",
-                   delayAsString(worst_slack_delta, sta_, digits),
-                   delayAsString(end_slack_delta, sta_, digits),
+                   "SA: TNS_Δ={}, cost={}, temp={:.3f}, prob={:.6f}, rand={:.3f}, accept={}",
+                   delayAsString(tns_delta, sta_, digits),
                    delayAsString(delta_cost, sta_, digits), 
                    current_temp, 
                    acceptance_prob, 
@@ -485,6 +500,8 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     OptoParams params(setup_slack_margin, verbose);
     params.iteration = opto_iteration;
     params.initial_tns = initial_tns;
+    repairSetupLastGasp(params, num_viols);
+    repairSetupLastGasp(params, num_viols);
     repairSetupLastGasp(params, num_viols);
   }
 
@@ -873,13 +890,13 @@ void RepairSetup::repairSetupLastGasp(const OptoParams& params, int& num_viols)
   }
 
   // Don't do anything unless there was some progress from previous fixing
-  if ((params.initial_tns - curr_tns) / params.initial_tns < 0.05) {
-    // clang-format off
-    debugPrint(logger_, RSZ, "repair_setup", 1, "last gasp is bailing out "
-               "because TNS was reduced by < 5% from previous fixing");
-    // clang-format on
-    return;
-  }
+  // if ((params.initial_tns - curr_tns) / params.initial_tns < 0.05) {
+  //   // clang-format off
+  //   debugPrint(logger_, RSZ, "repair_setup", 1, "last gasp is bailing out "
+  //              "because TNS was reduced by < 5% from previous fixing");
+  //   // clang-format on
+  //   return;
+  // }
 
   int end_index = 0;
   int max_end_count = violating_ends.size();
