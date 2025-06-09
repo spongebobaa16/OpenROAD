@@ -83,7 +83,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
                               const bool skip_buffer_removal,
                               const bool skip_last_gasp)
 {
-  bool openSecond = false;
+  // bool openSecond = false;
   bool repaired = false;
   init();
   constexpr int digits = 3;
@@ -233,9 +233,9 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     max_viol_ = -violating_ends.front().second;
   }
 
-  if (sta_->totalNegativeSlack(max_) > -0.000000006510) {
-    openSecond = true;
-  }
+  // if (sta_->totalNegativeSlack(max_) > -0.000000006510) {
+  //   openSecond = true;
+  // }
 
   for (const auto& end_original_slack : violating_ends) {
     fallback_ = false;
@@ -362,7 +362,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
       end_slack = sta_->vertexSlack(end, max_);
       sta_->worstSlack(max_, worst_slack, worst_vertex);
       float current_tns = sta_->totalNegativeSlack(max_);
-      const bool better = (!openSecond) ? (fuzzyGreater(worst_slack, prev_worst_slack)
+      const bool better = skip_size_down ? (fuzzyGreater(worst_slack, prev_worst_slack)
              || (end_index != 1 && fuzzyEqual(worst_slack, prev_worst_slack)
                  && fuzzyGreater(end_slack, prev_end_slack))) : (current_tns > prev_tns);
       debugPrint(logger_,
@@ -379,15 +379,27 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
         if (end_slack > setup_slack_margin) {
           --num_viols;
         }
-        debugPrint(logger_,
-                   RSZ,
-                   "my_test",
-                   1,
-                   "Better! TNS: {} -> {} (end slack: {} -> {})",
-                   delayAsString(prev_tns, sta_, digits),
-                   delayAsString(current_tns, sta_, digits),
-                   delayAsString(prev_end_slack, sta_, digits),
-                   delayAsString(end_slack, sta_, digits));
+        if (skip_size_down) {
+          debugPrint(logger_,
+                     RSZ,
+                     "my_test",
+                     1,
+                     "Better! (WNS-based) worst slack: {} -> {}, end slack: {} -> {}",
+                     delayAsString(prev_worst_slack, sta_, digits),
+                     delayAsString(worst_slack, sta_, digits),
+                     delayAsString(prev_end_slack, sta_, digits),
+                     delayAsString(end_slack, sta_, digits));
+        } else {
+          debugPrint(logger_,
+                     RSZ,
+                     "my_test",
+                     1,
+                     "Better! (TNS-based) TNS: {} -> {}, end slack: {} -> {}",
+                     delayAsString(prev_tns, sta_, digits),
+                     delayAsString(current_tns, sta_, digits),
+                     delayAsString(prev_end_slack, sta_, digits),
+                     delayAsString(end_slack, sta_, digits));
+        }
         prev_end_slack = end_slack;
         prev_worst_slack = worst_slack;
         prev_tns = current_tns;
@@ -406,15 +418,18 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
         float worst_slack_delta = prev_worst_slack - worst_slack;  // positive = worse worst_slack
         float end_slack_delta = prev_end_slack - end_slack;        // positive = worse end_slack
         
-        // Combined cost: prioritize worst_slack, then end_slack
+        // Combined cost: use flag to decide strategy
         float delta_cost;
         float tns_delta;
-        if (abs(worst_slack_delta) > 1e-15) {  // significant worst_slack change
-          delta_cost = worst_slack_delta;
-        } else {  // worst_slack ~equal, use end_slack 
-          delta_cost = end_slack_delta;
-        }
-        if (openSecond) {
+        if (skip_size_down) {
+          // Traditional strategy: prioritize worst_slack, then end_slack
+          if (abs(worst_slack_delta) > 1e-15) {  // significant worst_slack change
+            delta_cost = worst_slack_delta;
+          } else {  // worst_slack ~equal, use end_slack 
+            delta_cost = end_slack_delta;
+          }
+        } else {
+          // TNS-based strategy
           tns_delta = prev_tns - current_tns;
           delta_cost = tns_delta;
         }
@@ -438,8 +453,8 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
                    RSZ,
                    "my_test",
                    1,
-                   "SA: TNS_Δ={}, cost={}, temp={:.3f}, prob={:.6f}, rand={:.3f}, accept={}",
-                   delayAsString(tns_delta, sta_, digits),
+                   "SA ({}): cost={}, temp={:.3f}, prob={:.6f}, rand={:.3f}, accept={}",
+                   skip_size_down ? "WNS-based" : "TNS-based",
                    delayAsString(delta_cost, sta_, digits), 
                    current_temp, 
                    acceptance_prob, 
