@@ -4,6 +4,8 @@
 #include "RepairHold.hh"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -52,6 +54,7 @@ void RepairHold::init()
   dbStaState::init(resizer_->sta_);
   db_network_ = resizer_->db_network_;
   initial_design_area_ = resizer_->computeDesignArea();
+  hold_buffer_insertion_passes = 0;  // Initialize SA counter
 }
 
 bool RepairHold::repairHold(
@@ -443,16 +446,17 @@ void RepairHold::repairEndHold(Vertex* end_vertex,
                 buffer_cell, load_cap, dcalc_ap, buffer_delays, buffer_slews);
             // setup_slack > -hold_slack
             if (allow_setup_violations
-                || (slacks[rise_index_][max_index_] - setup_margin
-                        > -(slacks[rise_index_][min_index_] - hold_margin)
-                    && slacks[fall_index_][max_index_] - setup_margin
-                           > -(slacks[fall_index_][min_index_] - hold_margin)
-                    // enough slack to insert the buffer
-                    // setup_slack > buffer_delay
-                    && (slacks[rise_index_][max_index_] - setup_margin)
-                           > buffer_delays[rise_index_]
-                    && (slacks[fall_index_][max_index_] - setup_margin)
-                           > buffer_delays[fall_index_])) {
+                // || (slacks[rise_index_][max_index_] - setup_margin
+                //         > -(slacks[rise_index_][min_index_] - hold_margin)
+                //     && slacks[fall_index_][max_index_] - setup_margin
+                //            > -(slacks[fall_index_][min_index_] - hold_margin)
+                //     // enough slack to insert the buffer
+                //     // setup_slack > buffer_delay
+                //     && (slacks[rise_index_][max_index_] - setup_margin)
+                //            > buffer_delays[rise_index_]
+                //     && (slacks[fall_index_][max_index_] - setup_margin)
+                //            > buffer_delays[fall_index_])
+                ) {
               Vertex* path_load = path_vertices[i + 1];
               Point path_load_loc = db_network_->location(path_load->pin());
               Point drvr_loc = db_network_->location(path_vertex->pin());
@@ -478,10 +482,53 @@ void RepairHold::repairEndHold(Vertex* end_vertex,
               float slew_factor
                   = (slew_before > 0) ? slew_after / slew_before : 1.0;
 
-              if (slew_factor > 1.20
+              // Calculate slack changes for SA evaluation
+              float setup_slack_delta = setup_slack_before - setup_slack_after;  // positive = worse setup
+              
+              // Traditional rejection criteria
+              bool traditional_reject = (slew_factor > 1.20
                   || (!allow_setup_violations
                       && fuzzyLess(setup_slack_after, setup_slack_before)
-                      && setup_slack_after < setup_margin)) {
+                      && setup_slack_after < setup_margin));
+              
+              bool accept_change = false;
+              
+              if (!traditional_reject) {
+                // Traditional acceptance case
+                accept_change = true;
+              } else {
+                // Apply SA for traditionally rejected changes
+                // Temperature schedule: start high, decrease over iterations
+                float initial_temp = 1e-10f;  // Adjusted for typical slack magnitude
+                float cooling_rate = 0.95f;
+                float min_temp = 1e-14f;
+                float temp_calc = initial_temp * pow(cooling_rate, hold_buffer_insertion_passes);
+                float current_temp = (temp_calc > min_temp) ? temp_calc : min_temp;
+                
+                // SA acceptance probability 
+                float acceptance_prob = exp(-setup_slack_delta / current_temp);
+                
+                // Generate random number for acceptance decision
+                float random_val = static_cast<float>(rand()) / RAND_MAX;
+                bool accept_worse = (random_val < acceptance_prob);
+                
+                if (accept_worse) {
+                  accept_change = true;
+                  debugPrint(logger_, RSZ, "repair_hold_SA", 1, 
+                           "SA accepted worse buffer insertion: "
+                           "slack_delta={:.3e}, temp={:.3e}, prob={:.3f}, rand={:.3f}",
+                           setup_slack_delta, current_temp, acceptance_prob, random_val);
+                } else {
+                  debugPrint(logger_, RSZ, "repair_hold_SA", 2,
+                           "SA rejected worse buffer insertion: "
+                           "slack_delta={:.3e}, temp={:.3e}, prob={:.3f}, rand={:.3f}",
+                           setup_slack_delta, current_temp, acceptance_prob, random_val);
+                }
+                
+                hold_buffer_insertion_passes++;
+              }
+
+              if (!accept_change) {
                 resizer_->journalRestore();
                 inserted_buffer_count_ = 0;
               } else {

@@ -104,6 +104,10 @@ class RepairHold : public sta::dbStaState
   int swap_pin_count_ = 0;
   int removed_buffer_count_ = 0;
   double initial_design_area_ = 0;
+  
+  // SA related variables for hold repair
+  int hold_buffer_insertion_passes = 0;
+  
   const MinMax* min_ = MinMax::min();
   const MinMax* max_ = MinMax::max();
   const int min_index_ = MinMax::minIndex();

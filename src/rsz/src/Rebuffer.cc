@@ -873,13 +873,13 @@ void BufferMove::addBuffers(
         } else {
           // Ditto for cap vs area
           float buffered_area = best_option->area() + 1;
-          for (const BufferedNetPtr& buffer_option : buffered_options) {
-            if (fuzzyLessEqual(buffer_option->cap(), buffer_cap)
-                && fuzzyLessEqual(buffer_option->area(), buffered_area)) {
-              prune = true;
-              break;
-            }
-          }
+          // for (const BufferedNetPtr& buffer_option : buffered_options) {
+          //   if (fuzzyLessEqual(buffer_option->cap(), buffer_cap)
+          //       && fuzzyLessEqual(buffer_option->area(), buffered_area)) {
+          //     prune = true;
+          //     break;
+          //   }
+          // }
         }
         if (!prune) {
           BufferedNetPtr z = make_shared<BufferedNet>(

@@ -376,7 +376,7 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
                  delayAsString(current_tns, sta_, digits),
                  better ? "save" : "");
       if (better) {
-        if (end_slack > setup_slack_margin) {
+        if (end_slack >= setup_slack_margin) {
           --num_viols;
         }
         if (skip_size_down) {
