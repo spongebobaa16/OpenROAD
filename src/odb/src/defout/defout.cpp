@@ -51,4 +51,9 @@ bool defout::writeBlock(dbBlock* block, const char* def_file)
   return _writer->writeBlock(block, def_file);
 }
 
+bool defout::writeBlock_Pl(dbBlock* block, const char* def_file)
+{
+  return _writer->writeBlock_Pl(block, def_file);
+}
+
 }  // namespace odb
