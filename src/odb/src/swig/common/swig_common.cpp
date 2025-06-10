@@ -51,6 +51,14 @@ int write_def(odb::dbBlock* block,
   return writer.writeBlock(block, path);
 }
 
+int write_pl(odb::dbBlock* block, const char* path)
+{
+  utl::Logger* logger = new utl::Logger(nullptr);
+  odb::defout writer(logger);
+  writer.setVersion(odb::defout::DEF_5_8);
+  return writer.writeBlock_Pl(block, path);
+}
+
 int write_lef(odb::dbLib* lib, const char* path)
 {
   utl::Logger* logger = new utl::Logger(nullptr);
@@ -72,6 +80,7 @@ int write_tech_lef(odb::dbTech* tech, const char* path)
   writer.writeTech(tech);
   return true;
 }
+
 int write_macro_lef(odb::dbLib* lib, const char* path)
 {
   utl::Logger* logger = new utl::Logger(nullptr);

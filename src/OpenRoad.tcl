@@ -101,6 +101,14 @@ proc write_def { args } {
   ord::write_def_cmd $filename $version
 }
 
+sta::define_cmd_args "write_pl" {filename}
+
+proc write_pl { args } {
+  sta::check_argc_eq1 "write_pl" $args
+  set filename [file nativename [lindex $args 0]]
+  ord::write_pl_cmd $filename
+}
+
 sta::define_cmd_args "write_abstract_lef" {[-bloat_factor amount|-bloat_occupied_layers] filename}
 sta::define_cmd_args "write_lef" {filename}
 

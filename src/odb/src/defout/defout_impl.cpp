@@ -96,12 +96,68 @@ void defout_impl::selectNet(dbNet* net)
   _select_net_list.push_back(net);
 }
 
-void defout_impl::selectInst(dbInst* inst)
+
+
+bool defout_impl::writeBlock_Pl(dbBlock* block, const char* def_file)
 {
-  if (!inst) {
-    return;
+  if (!_select_net_list.empty()) {
+    _select_net_map = new dbMap<dbNet, char>(block->getNets());
+    std::list<dbNet*>::iterator sitr;
+    for (sitr = _select_net_list.begin(); sitr != _select_net_list.end();
+         ++sitr) {
+      dbNet* net = *sitr;
+      (*_select_net_map)[net] = 1;
+      if (net->isSpecial() || net->isMark_1ed()) {
+        continue;
+      }
+      if (!_select_inst_map) {
+        _select_inst_map = new dbMap<dbInst, char>(block->getInsts());
+      }
+      dbSet<dbITerm> iterms = net->getITerms();
+      dbSet<dbITerm>::iterator titr;
+      for (titr = iterms.begin(); titr != iterms.end(); ++titr) {
+        dbInst* inst = (*titr)->getInst();
+        (*_select_inst_map)[inst] = 1;
+      }
+    }
   }
-  _select_inst_list.push_back(inst);
+  if (!_select_inst_list.empty()) {
+    if (!_select_inst_map) {
+      _select_inst_map = new dbMap<dbInst, char>(block->getInsts());
+    }
+    std::list<dbInst*>::iterator xitr;
+    for (xitr = _select_inst_list.begin(); xitr != _select_inst_list.end();
+         ++xitr) {
+      dbInst* inst = *xitr;
+      (*_select_inst_map)[inst] = 1;
+    }
+  }
+
+  _dist_factor
+      = (double) block->getDefUnits() / (double) block->getDbUnitsPerMicron();
+  utl::FileHandler fileHandler(def_file);
+  _out = fileHandler.getFile();
+
+
+
+  // By default C File*'s are line buffered which means they get dumped on every
+  // newline, which is nominally pretty expensive. This makes it so that the
+  // writes are buffered according to the block size which on modern systems can
+  // be as much as 16kb. DEF's have a lot of newlines, and are large in size
+  // which makes writing them really slow with line buffering.
+  //
+  // The following lines enable IO buffering based on disk block size.
+  struct stat stats;
+  fstat(fileno(_out), &stats);
+  setvbuf(_out, nullptr, _IOFBF, stats.st_blksize);
+
+  writeBTerms_Pl(block);
+
+  fprintf(_out, "CELLS\n");
+  
+  writeInsts_Pl(block);
+
+  return true;
 }
 
 bool defout_impl::writeBlock(dbBlock* block, const char* def_file)
@@ -544,6 +600,21 @@ void defout_impl::writeInsts(dbBlock* block)
   fprintf(_out, "END COMPONENTS\n");
 }
 
+void defout_impl::writeInsts_Pl(dbBlock* block)
+{
+  dbSet<dbInst> insts = block->getInsts();
+
+
+  // Sort the components for consistent output
+  for (dbInst* inst : sortedSet(insts)) {
+    if (_select_inst_map && !(*_select_inst_map)[inst]) {
+      continue;
+    }
+    writeInst_Pl(inst);
+  }
+
+}
+
 void defout_impl::writeNonDefaultRules(dbBlock* block)
 {
   dbSet<dbTechNonDefaultRule> rules = block->getNonDefaultRules();
@@ -758,6 +829,59 @@ void defout_impl::writeInst(dbInst* inst)
   fprintf(_out, " ;\n");
 }
 
+
+
+void defout_impl::writeInst_Pl(dbInst* inst)
+{
+  dbMaster* master = inst->getMaster();
+  std::string mname = master->getName();
+
+  if (_use_net_inst_ids) {
+      fprintf(_out, "I%u", inst->getId());
+    
+  } else {
+    std::string iname = inst->getName();
+    fprintf(_out, "%s", iname.c_str());  
+  }
+
+
+
+  int x, y;
+  inst->getLocation(x, y);
+  x = defdist(x);
+  y = defdist(y);
+
+  const char* orient = defOrient(inst->getOrient());
+  dbPlacementStatus status = inst->getPlacementStatus();
+
+  switch (status.getValue()) {
+    case dbPlacementStatus::NONE:
+      break;
+
+    case dbPlacementStatus::UNPLACED: {
+      break;
+    }
+
+    case dbPlacementStatus::SUGGESTED:
+    case dbPlacementStatus::PLACED: {
+      fprintf(_out, " %d %d : %s\n", x, y, orient);
+      break;
+    }
+
+    case dbPlacementStatus::LOCKED:
+    case dbPlacementStatus::FIRM: {
+      fprintf(_out, " %d %d : %s\n", x, y, orient);
+      break;
+    }
+
+    case dbPlacementStatus::COVER: {
+      fprintf(_out, " %d %d : %s\n", x, y, orient);
+      break;
+    }
+  }
+
+}
+
 void defout_impl::writeBTerms(dbBlock* block)
 {
   dbSet<dbBTerm> bterms = block->getBTerms();
@@ -793,6 +917,45 @@ void defout_impl::writeBTerms(dbBlock* block)
 
   fprintf(_out, "END PINS\n");
 }
+
+
+void defout_impl::writeBTerms_Pl(dbBlock* block)
+{
+  dbSet<dbBTerm> bterms = block->getBTerms();
+
+  if (bterms.size() == 0) {
+    return;
+  }
+
+  uint n = 0;
+
+  dbSet<dbBTerm>::iterator itr;
+
+  for (itr = bterms.begin(); itr != bterms.end(); ++itr) {
+    dbBTerm* bterm = *itr;
+    dbNet* net = bterm->getNet();
+
+    if (net && _select_net_map && !(*_select_net_map)[net]) {
+      continue;
+    }
+
+    ++n;
+  }
+
+
+  for (dbBTerm* bterm : sortedSet(bterms)) {
+    dbNet* net = bterm->getNet();
+    if (net && _select_net_map && !(*_select_net_map)[net]) {
+      continue;
+    }
+    writeBTerm_Pl(bterm);
+  }
+
+}
+
+
+
+
 
 void defout_impl::writeRegions(dbBlock* block)
 {
@@ -1058,6 +1221,30 @@ void defout_impl::writeBTerm(dbBTerm* bterm)
   }
 }
 
+
+void defout_impl::writeBTerm_Pl(dbBTerm* bterm)
+{
+  dbNet* net = bterm->getNet();
+  if (net) {
+    dbSet<dbBPin> bpins = bterm->getBPins();
+
+    if (bpins.size() != 0) {
+      int cnt = 0;
+
+      dbSet<dbBPin>::iterator itr;
+
+      for (itr = bpins.begin(); itr != bpins.end(); ++itr) {
+        writeBPin_Pl(*itr, cnt++);
+      }
+    }
+
+    std::string bname = bterm->getName();
+    fprintf(_out, "\n");
+  } 
+}
+
+
+
 void defout_impl::writeBPin(dbBPin* bpin, int cnt)
 {
   dbBTerm* bterm = bpin->getBTerm();
@@ -1221,6 +1408,61 @@ void defout_impl::writeBPin(dbBPin* bpin, int cnt)
     }
   }
 }
+
+void defout_impl::writeBPin_Pl(dbBPin* bpin, int cnt)
+{
+  if (cnt != 0) {
+    return;
+  }
+
+
+  dbBTerm* bterm = bpin->getBTerm();
+  std::string bname = bterm->getName();
+
+  fprintf(_out, "%s", bname.c_str());
+
+  bool isFirst = true;
+  int dw, dh, x = 0, y = 0;
+
+  for (dbBox* box : bpin->getBoxes()) {
+    dw = defdist(int(box->getDX() / 2));
+    dh = defdist(int(box->getDY() / 2));
+
+    if (isFirst) {
+      isFirst = false;
+      x = defdist(box->xMin()) + dw;
+      y = defdist(box->yMin()) + dh;
+    }
+  }
+
+  dbPlacementStatus status = bpin->getPlacementStatus();
+
+  switch (status.getValue()) {
+    case dbPlacementStatus::NONE:
+    case dbPlacementStatus::UNPLACED:
+      break;
+
+    case dbPlacementStatus::SUGGESTED:
+    case dbPlacementStatus::PLACED: {
+      fprintf(_out, " %d %d : N", x, y);
+      break;
+    }
+
+    case dbPlacementStatus::LOCKED:
+    case dbPlacementStatus::FIRM: {
+      fprintf(_out, " %d %d : N", x, y);
+      break;
+    }
+
+    case dbPlacementStatus::COVER: {
+      fprintf(_out, " %d %d : N", x, y);
+      break;  
+    }
+  }
+}
+
+
+
 
 void defout_impl::writeBlockages(dbBlock* block)
 {

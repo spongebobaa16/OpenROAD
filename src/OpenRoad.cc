@@ -373,6 +373,20 @@ void OpenRoad::writeDef(const char* filename, const string& version)
   }
 }
 
+void OpenRoad::writePl(const char* filename)
+{
+  odb::dbChip* chip = db_->getChip();
+  if (chip) {
+    odb::dbBlock* block = chip->getBlock();
+    if (block) {
+      odb::defout def_writer(logger_);
+      def_writer.setVersion(odb::defout::Version::DEF_5_8);
+      def_writer.writeBlock_Pl(block, filename);
+    }
+  }
+
+}
+
 void OpenRoad::writeAbstractLef(const char* filename,
                                 const int bloat_factor,
                                 const bool bloat_occupied_layers)

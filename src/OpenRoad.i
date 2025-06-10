@@ -328,6 +328,13 @@ write_def_cmd(const char *filename,
 }
 
 void
+write_pl_cmd(const char *filename)
+{
+  OpenRoad *ord = getOpenRoad();
+  ord->writePl(filename);
+}
+
+void
 write_lef_cmd(const char *filename)
 {
   OpenRoad *ord = getOpenRoad();

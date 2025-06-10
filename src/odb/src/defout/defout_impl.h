@@ -11,6 +11,7 @@
 #include "odb/dbMap.h"
 #include "odb/defout.h"
 #include "odb/odb.h"
+
 namespace utl {
 class Logger;
 }
@@ -68,7 +69,12 @@ class defout_impl
   void writeNonDefaultRule(dbTechNonDefaultRule* rule);
   void writeLayerRule(dbTechLayerRule* rule);
   void writeInst(dbInst* inst);
+  void writeInst_Pl(dbInst* inst);
   void writeBTerms(dbBlock* block);
+  void writeInsts_Pl(dbBlock* block);
+  void writeBTerms_Pl(dbBlock* block);
+  void writeBTerm_Pl(dbBTerm* bterm);
+  void writeBPin_Pl(dbBPin* bpin, int cnt);
   void writeBTerm(dbBTerm* bterm);
   void writeBPin(dbBPin* bpin, int n);
   void writeRegions(dbBlock* block);
@@ -112,10 +118,10 @@ class defout_impl
 
   void selectNet(dbNet* net);
 
-  void selectInst(dbInst* inst);
   void setVersion(int v) { _version = v; }
 
   bool writeBlock(dbBlock* block, const char* def_file);
+  bool writeBlock_Pl(dbBlock* block, const char* def_file);
 };
 
 }  // namespace odb

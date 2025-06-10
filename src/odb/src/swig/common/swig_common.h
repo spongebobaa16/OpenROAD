@@ -22,6 +22,8 @@ int write_def(odb::dbBlock* block,
               const char* path,
               odb::defout::Version version = odb::defout::Version::DEF_5_8);
 
+int write_pl(odb::dbBlock* block, const char* path);
+
 odb::dbDatabase* read_db(odb::dbDatabase* db, const char* db_path);
 
 int write_db(odb::dbDatabase* db, const char* db_path);
