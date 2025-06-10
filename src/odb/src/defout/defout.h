@@ -11,6 +11,8 @@ class Logger;
 namespace odb {
 
 class dbBlock;
+class dbNet;
+class dbInst;
 
 class defout
 {
@@ -33,7 +35,6 @@ class defout
   void setUseNetInstIds(bool value);
   void setUseMasterIds(bool value);
   void selectNet(dbNet* net);
-  void selectInst(dbInst* inst);
   bool writeBlock(dbBlock* block, const char* def_file);
   bool writeBlock_Pl(dbBlock* block, const char* def_file);
 

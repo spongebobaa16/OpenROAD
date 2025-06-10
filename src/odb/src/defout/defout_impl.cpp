@@ -96,13 +96,7 @@ void defout_impl::selectNet(dbNet* net)
   _select_net_list.push_back(net);
 }
 
-void defout_impl::selectInst(dbInst* inst)
-{
-  if (!inst) {
-    return;
-  }
-  _select_inst_list.push_back(inst);
-}
+
 
 bool defout_impl::writeBlock_Pl(dbBlock* block, const char* def_file)
 {
@@ -144,7 +138,7 @@ bool defout_impl::writeBlock_Pl(dbBlock* block, const char* def_file)
   utl::FileHandler fileHandler(def_file);
   _out = fileHandler.getFile();
 
-  
+
 
   // By default C File*'s are line buffered which means they get dumped on every
   // newline, which is nominally pretty expensive. This makes it so that the
@@ -159,6 +153,8 @@ bool defout_impl::writeBlock_Pl(dbBlock* block, const char* def_file)
 
   writeBTerms_Pl(block);
 
+  fprintf(_out, "CELLS\n");
+  
   writeInsts_Pl(block);
 
   return true;
