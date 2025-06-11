@@ -153,9 +153,9 @@ bool RepairSetup::repairSetup(const float setup_slack_margin,
     if (!skip_gate_cloning) {
       move_sequence.push_back(resizer_->clone_move);
     }
-    if (!skip_buffering) {
-      move_sequence.push_back(resizer_->split_load_move);
-    }
+    // if (!skip_buffering) {
+    //   move_sequence.push_back(resizer_->split_load_move);
+    // }
   }
 
   string repair_moves = "Repair move sequence: ";

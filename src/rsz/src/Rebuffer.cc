@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iostream>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -829,7 +830,40 @@ void BufferMove::addBuffers(
       BufferedNetPtr best_area_option = nullptr;
       Delay best_option_delay = 0;
 
+      // Get buffer dimensions
+      odb::dbMaster* buffer_master = db_network_->staToDb(buffer_cell);
+      int buffer_width = buffer_master->getWidth();
+      int buffer_height = buffer_master->getHeight();
+
       for (const BufferedNetPtr& z : Z1) {
+        // Check if buffer placement at z location would overlap with any existing instances
+        bool has_overlap = false;
+        int z_x = z->location().getX();
+        int z_y = z->location().getY();
+        
+        odb::dbSet<odb::dbInst> insts = resizer_->block_->getInsts();
+        for (odb::dbInst* inst : insts) {
+          int inst_x = inst->getLocation().getX();
+          int inst_y = inst->getLocation().getY();
+          int inst_width = inst->getMaster()->getWidth();
+          int inst_height = inst->getMaster()->getHeight();
+
+          // Check for rectangle overlap
+          if (z_x < (inst_x + inst_width) &&
+              (z_x + buffer_width) > inst_x &&
+              z_y < (inst_y + inst_height) &&
+              (z_y + buffer_height) > inst_y) {
+            has_overlap = true;
+            break;
+          }
+        }
+
+        // Skip this location if there's overlap
+        if (has_overlap) {
+          continue;
+        }
+        std::cout << "valid: " << buffer_cell->name() << " " << buffer_width << " " << buffer_height << std::endl;
+
         const Delay buffer_delay = bufferDelay(
             buffer_cell, z->slackTransition(), z->cap() + out->capacitance());
 
